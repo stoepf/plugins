@@ -36,8 +36,18 @@ class XMPP(SmartPlugin):
 
     def __init__(self, smarthome, jid, password, logic='XMPP'):
         self.logger = logging.getLogger(__name__)
+        server = self.get_parameter_value('server')
         plugins = self.get_parameter_value('plugins')
         joins = self.get_parameter_value('join')
+
+        # Check server parameter and default to port 5222
+        if server is None:
+            self._server = None
+        elif ':' in server:
+            parts = server.split(':')
+            self._server = (parts[0].strip(), parts[1].strip())
+        else:
+            self._server = (server, 5222)
 
         # Enable MUC in case account should join channels
         if len(joins) and 'xep_0045' not in plugins:
@@ -55,7 +65,10 @@ class XMPP(SmartPlugin):
 
     def run(self):
         self.alive = True
-        self.xmpp.connect()
+        if self._server is not None:
+            self.xmpp.connect(address=self._server)
+        else:
+            self.xmpp.connect()
         self.xmpp.process(threaded=True)
 
     def stop(self):
@@ -84,10 +97,14 @@ class XMPP(SmartPlugin):
                 pass
 
     def handleXMPPConnected(self, event):
-        self.xmpp.sendPresence(pstatus="Send me a message")
-        self.xmpp.get_roster()
-        for chat in self._join:
-            self.xmpp.plugin['xep_0045'].joinMUC(chat, self.xmpp.boundjid.bare, wait=True)
+        try:
+            self.xmpp.sendPresence(pstatus="Send me a message")
+            self.xmpp.get_roster()
+            for chat in self._join:
+                self.xmpp.plugin['xep_0045'].joinMUC(chat, self.xmpp.boundjid.bare, wait=True)
+        except Exception as e:
+            self.logger.error("XMPP: Reconnecting, because can not set/get presence/roster: {}".format(e))
+            self.xmpp.reconnect()
 
     def handleIncomingMessage(self, msg):
         """
@@ -122,6 +139,8 @@ class XMPP(SmartPlugin):
 
 class XMPPLogHandler(logging.Handler):
 
+    _errors = []
+
     def __init__(self, xmpp_plugin, xmpp_receiver, xmpp_receiver_type='chat'):
         logging.Handler.__init__(self)
         self._plugin = None
@@ -130,15 +149,16 @@ class XMPPLogHandler(logging.Handler):
         self._xmpp_receiver_type = xmpp_receiver_type
 
     def emit(self, record):
-        if self._plugin is None:
+        if self._plugin is None and Plugins.get_instance() is not None:
             self._plugin = Plugins.get_instance().return_plugin(self._xmpp_plugin)
             if self._plugin is None:
-                logging.getLogger(__name__).error('Can not get XMPP plugin for {} - disabling XMPP logging!'.format(self._xmpp_plugin))
-                self._plugin = False
+                if self._xmpp_plugin not in self._errors:
+                    self._errors.append(self._xmpp_plugin)
+                    logging.getLogger(__name__).error('Can not get XMPP plugin \'{}\' used to log messages via XMPP - trying later!'.format(self._xmpp_plugin))
             else:
                 logging.getLogger(__name__).info('Configured XMPP logging using pluing {}'.format(self._xmpp_plugin))
 
-        if self._plugin is not False:
+        if self._plugin is not None:
             self._plugin.send(self._xmpp_receiver, self.format(record), self._xmpp_receiver_type)
 
 

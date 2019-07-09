@@ -29,10 +29,11 @@ import logging
 import os
 from lib.model.smartplugin import *
 from bin.smarthome import VERSION
+from lib.item import Items
 
 
 class StateEngine(SmartPlugin):
-    PLUGIN_VERSION = '1.4.1'
+    PLUGIN_VERSION = '1.6.0'
 
     # Constructor
     # noinspection PyUnusedLocal,PyMissingConstructor
@@ -40,6 +41,7 @@ class StateEngine(SmartPlugin):
 
         if '.'.join(VERSION.split('.', 2)[:2]) <= '1.5':
             self.logger = logging.getLogger(__name__)
+        self.items = Items.get_instance()
         self.__items = {}
         self.alive = False
         self.__cli = None
@@ -63,8 +65,6 @@ class StateEngine(SmartPlugin):
                     log_directory = base + log_directory
                 if not os.path.exists(log_directory):
                     os.makedirs(log_directory)
-                SeLogger.set_loglevel(log_level)
-                SeLogger.set_logdirectory(log_directory)
                 text = "StateEngine extended logging is active. Logging to '{0}' with loglevel {1}."
                 self.logger.info(text.format(log_directory, log_level))
             log_maxage = self.get_parameter_value("log_maxage")
@@ -73,7 +73,8 @@ class StateEngine(SmartPlugin):
                 SeLogger.set_logmaxage(log_maxage)
                 cron = ['init', '30 0 * *']
                 self.scheduler_add('StateEngine: Remove old logfiles', SeLogger.remove_old_logfiles, cron=cron, offset=0)
-
+            SeLogger.set_loglevel(log_level)
+            SeLogger.set_logdirectory(log_directory)
             self.get_sh().stateengine_plugin_functions = StateEngineFunctions.SeFunctions(self.get_sh(), self.logger)
         except Exception:
             self._init_complete = False
@@ -82,9 +83,13 @@ class StateEngine(SmartPlugin):
     # Parse an item
     # noinspection PyMethodMayBeStatic
     def parse_item(self, item):
-        if "se_manual_include" in item.conf or "se_manual_exclude" in item.conf:
+        try:
+            item.expand_relativepathes('se_item_*', '', '')
+        except Exception:
+            pass
+        if self.has_iattr(item.conf, "se_manual_include") or self.has_iattr(item.conf, "se_manual_exclude"):
             item._eval = "sh.stateengine_plugin_functions.manual_item_update_eval('" + item.id() + "', caller, source)"
-        elif "se_manual_invert" in item.conf:
+        elif self.has_iattr(item.conf, "se_manual_invert"):
             item._eval = "not sh." + item.id() + "()"
 
         return None
@@ -93,13 +98,13 @@ class StateEngine(SmartPlugin):
     def run(self):
         # Initialize
         self.logger.info("Init StateEngine items")
-        for item in self.get_sh().find_items("se_plugin"):
+        for item in self.items.find_items("se_plugin"):
             if item.conf["se_plugin"] == "active":
                 try:
                     ab_item = StateEngineItem.SeItem(self.get_sh(), item)
                     self.__items[ab_item.id] = ab_item
                 except ValueError as ex:
-                    self.logger.error("Item: {0}: {1}".format(item.id(), str(ex)))
+                    self.logger.error("Problem with Item: {0}: {1}".format(item.property.path, ex))
 
         if len(self.__items) > 0:
             self.logger.info("Using StateEngine for {} items".format(len(self.__items)))
@@ -216,7 +221,7 @@ class WebInterface(SmartPluginWebIf):
 
         :return: contents of the template after beeing rendered
         """
-        item = self.plugin.get_sh().return_item(item_path)
+        item = self.plugin.items.return_item(item_path)
 
         tmpl = self.tplenv.get_template('{}.html'.format(page))
         # add values to be passed to the Jinja2 template eg: tmpl.render(p=self.plugin, interface=interface, ...)
