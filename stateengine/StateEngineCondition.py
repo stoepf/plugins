@@ -22,6 +22,7 @@ from . import StateEngineTools
 from . import StateEngineCurrent
 from . import StateEngineValue
 from . import StateEngineEval
+from collections import OrderedDict
 
 
 # Class representing a single condition
@@ -49,15 +50,21 @@ class SeCondition(StateEngineTools.SeItemChild):
         self.__error = None
 
     def __repr__(self):
-        return "SeCondition item: {}, name {}, eval {}, value {}.".format(self.__item, self.__name, self.__eval, self.__value)
+        return "'item': {}, 'eval': {}, 'value': {}".format(self.__item, self.__eval, self.__value)
 
     # set a certain function to a given value
     # func: Function to set ('item', 'eval', 'value', 'min', 'max', 'negate', 'agemin', 'agemax' or 'agenegate')
     # value: Value for function
     def set(self, func, value):
         if func == "se_item":
+            if ":" in value:
+                self._log_warning("Your item configuration '{0}' is wrong! Define a plain (relative) item!", value)
+                _, _, value = value.partition(":")
             self.__item = self._abitem.return_item(value)
         elif func == "se_eval":
+            if ":" in value:
+                self._log_warning("Your eval configuration '{0}' is wrong! Define a plain eval term!", value)
+                _, _, value = value.partition(":")
             self.__eval = value
         if func == "se_value":
             self.__value.set(value, self.__name)
@@ -75,6 +82,18 @@ class SeCondition(StateEngineTools.SeItemChild):
             self.__agenegate = value
         elif func != "se_item" and func != "se_eval":
             self._log_warning("Function '{0}' is no valid function! Please check item attribute.", func)
+
+    def get(self):
+        eval_result = str(self.__eval)
+        if 'SeItem' in eval_result:
+            eval_result = eval_result.split('SeItem.')[1].split(' ')[0]
+        if 'SeCurrent' in eval_result:
+            eval_result = eval_result.split('SeCurrent.')[1].split(' ')[0]
+        value_result = str(self.__value.get_for_webif())
+        result = {'item': str(self.__item), 'eval': eval_result, 'value': value_result, 'min': str(self.__min),
+                  'max': str(self.__max), 'agemin': str(self.__agemin), 'agemax': str(self.__agemax),
+                  'negate': str(self.__negate), 'agenegate': str(self.__agenegate)}
+        return result
 
     # Complete condition (do some checks, cast value, min and max based on item or eval data types)
     # item_state: item to read from
@@ -156,18 +175,14 @@ class SeCondition(StateEngineTools.SeItemChild):
         except Exception as ex:
             raise ValueError("Condition {0}: Error when casting: {1}".format(self.__name, ex))
 
-        # 'agemin' and 'agemax' can only be used for items, not for eval
+        # 'agemin' and 'agemax' can only be used for items
         cond_min_max = self.__agemin.is_empty() and self.__agemax.is_empty()
         try:
             cond_evalitem = self.__eval and ("get_relative_item(" in self.__eval or "return_item(" in self.__eval)
         except Exception:
             cond_evalitem = False
-        if self.__item is None and not cond_min_max:
-            if cond_evalitem:
-                self._log_info("Make sure your se_eval '{}' really contains an item and not an ID. If the agemin/max "
-                               "condition does not work though, please check your eval!", self.__eval)
-            else:
-                raise ValueError("Condition {}: 'agemin'/'agemax' can not be used for eval!".format(self.__name))
+        if self.__item is None and not cond_min_max and not cond_evalitem:
+            raise ValueError("Condition {}: 'agemin'/'agemax' can not be used for eval!".format(self.__name))
 
         return True
 
@@ -175,12 +190,17 @@ class SeCondition(StateEngineTools.SeItemChild):
     def check(self):
         # Ignore if no current value can be determined (should not happen as we check this earlier, but to be sure ...)
         if self.__item is None and self.__eval is None:
-            self._log_info("condition '{0}': No item or eval found! Considering condition as matching!", self.__name)
+            self._log_info("Condition '{0}': No item or eval found! Considering condition as matching!", self.__name)
             return True
+        self._log_debug("Condition '{0}': Checking all relevant stuff", self.__name)
+        self._log_increase_indent()
         if not self.__check_value():
+            self._log_decrease_indent()
             return False
         if not self.__check_age():
+            self._log_decrease_indent()
             return False
+        self._log_decrease_indent()
         return True
 
     # Write condition to logger
@@ -190,9 +210,9 @@ class SeCondition(StateEngineTools.SeItemChild):
         if self.__item is not None:
             if isinstance(self.__item, list):
                 for i in self.__item:
-                    self._log_debug("item {0}", self.__name, i.property.path)
+                    self._log_debug("item: {0} ({1})", self.__name, i.property.path)
             else:
-                self._log_debug("item {0}", self.__name, self.__item.property.path)
+                self._log_debug("item: {0} ({1})", self.__name, self.__item.property.path)
         if self.__eval is not None:
             if isinstance(self.__item, list):
                 for e in self.__item:
@@ -224,8 +244,24 @@ class SeCondition(StateEngineTools.SeItemChild):
 
     # Check if value conditions match
     def __check_value(self):
+        def __convert(value, current):
+            _oldvalue = value
+            if isinstance(current, bool):
+                value = StateEngineTools.cast_bool(value)
+            elif isinstance(current, (int, float)):
+                value = StateEngineTools.cast_num(value)
+            elif isinstance(current, list):
+                value = StateEngineTools.cast_list(value)
+            else:
+                value = str(value)
+                current = str(current)
+            self._log_info("Value {} was type {} and therefore not the same type as item value {}. It got converted to {}.",
+                           _oldvalue, type(_oldvalue), current, type(value))
+            return value, current
+
         current = self.__get_current()
         try:
+            cond_min_max = self.__min.is_empty() and self.__max.is_empty()
             if not self.__value.is_empty():
                 # 'value' is given. We ignore 'min' and 'max' and check only for the given value
                 value = self.__value.get()
@@ -237,9 +273,8 @@ class SeCondition(StateEngineTools.SeItemChild):
                     self._log_increase_indent()
 
                     for element in value:
-                        if type(element) != type(current):
-                            element = str(element)
-                            current = str(current)
+                        if type(element) != type(current) and current is not None:
+                            element, current = __convert(element, current)
                         if self.__negate:
                             if current == element:
                                 self._log_debug("{0} found but negated -> not matching", element)
@@ -258,9 +293,8 @@ class SeCondition(StateEngineTools.SeItemChild):
 
                 else:
                     # If current and value have different types, convert both to string
-                    if type(value) != type(current):
-                        value = str(value)
-                        current = str(current)
+                    if type(value) != type(current) and current is not None:
+                        value, current = __convert(value, current)
                     text = "Condition '{0}': value={1} negate={2} current={3}"
                     self._log_debug(text, self.__name, value, self.__negate, current)
                     self._log_increase_indent()
@@ -277,7 +311,7 @@ class SeCondition(StateEngineTools.SeItemChild):
                     self._log_debug("not OK -> not matching")
                     return False
 
-            else:
+            elif not cond_min_max:
                 min_get_value = self.__min.get()
                 max_get_value = self.__max.get()
                 min_value = [min_get_value] if not isinstance(min_get_value, list) else min_get_value
@@ -335,6 +369,11 @@ class SeCondition(StateEngineTools.SeItemChild):
                 else:
                     self._log_debug("given limits ok -> matching")
                     return True
+            else:
+                self._log_warning("Neither value nor min/max given. This might result in unexpected evalutions. Min {}, max {}, value {}",
+                                  self.__min.get(), self.__max.get(), self.__value.get())
+                self._log_increase_indent()
+                return True
 
         except Exception as ex:
             self._log_warning("Problem checking value {}", ex)
@@ -348,12 +387,25 @@ class SeCondition(StateEngineTools.SeItemChild):
             self._log_info("Age of '{0}': No limits given", self.__name)
             return True
 
-        # Ignore if no current value can be determined (should not happen as we check this earlier, but to be sure ...)
-        if self.__item is None:
+        # Ignore if no current value can be determined
+        if self.__item is None and self.__eval is None:
             self._log_info("Age of '{0}': No item found! Considering condition as matching!", self.__name)
             return True
 
-        current = self.__item.age()
+        try:
+            cond_evalitem = self.__eval and ("get_relative_item(" in self.__eval or "return_item(" in self.__eval)
+        except Exception:
+            cond_evalitem = False
+        if self.__item is None and cond_evalitem is False:
+            self._log_info("Make sure your se_eval '{}' really contains an item and not an ID. If the age "
+                           "condition does not work though, please check your eval!", self.__eval)
+
+        try:
+            current = self.__get_current(type='age')
+        except Exception as ex:
+            self._log_info("Age of '{0}': Not possible to get age from eval {1}! "
+                           "Considering condition as matching: {2}", self.__name, self.__eval, ex)
+            return True
         agemin = None if self.__agemin.is_empty() else self.__agemin.get()
         agemax = None if self.__agemax.is_empty() else self.__agemax.get()
         try:
@@ -409,12 +461,12 @@ class SeCondition(StateEngineTools.SeItemChild):
             self._log_decrease_indent()
 
     # Current value of condition (based on item or eval)
-    def __get_current(self):
+    def __get_current(self, type='value'):
         if self.__item is not None:
-            # noinspection PyCallingNonCallable
-            return self.__item()
+            return self.__item.property.value if type == 'value' else self.__item.property.last_change_age
         if self.__eval is not None:
             # noinspection PyUnusedLocal
+            self._log_debug("Trying to get {} of eval {}", type, self.__eval)
             sh = self._sh
             if isinstance(self.__eval, str):
                 # noinspection PyUnusedLocal
@@ -422,13 +474,12 @@ class SeCondition(StateEngineTools.SeItemChild):
                     # noinspection PyUnusedLocal
                     stateengine_eval = se_eval = StateEngineEval.SeEval(self._abitem)
                 try:
-                    value = eval(self.__eval)
+                    value = eval(self.__eval).property.value if type == 'value' else eval(self.__eval).property.last_change_age
                 except Exception as ex:
                     text = "Condition {}: problem evaluating {}: {}"
-                    raise ValueError(text.format(self.__name, str(self.__eval), ex))
+                    raise ValueError(text.format(self.__name, self.__eval, ex))
                 else:
                     return value
             else:
-                # noinspection PyCallingNonCallable
                 return self.__eval()
         raise ValueError("Condition {}: Neither 'item' nor eval given!".format(self.__name))

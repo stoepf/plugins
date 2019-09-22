@@ -22,6 +22,7 @@ from . import StateEngineConditionSet
 from . import StateEngineTools
 from collections import OrderedDict
 
+
 # Class representing a list of condition sets
 class SeConditionSets(StateEngineTools.SeItemChild):
 
@@ -31,9 +32,18 @@ class SeConditionSets(StateEngineTools.SeItemChild):
         super().__init__(abitem)
         self.__condition_sets = OrderedDict()
 
+    def __repr__(self):
+        return "{}".format(self.get())
+
     # Return number of condition sets in list
     def count(self):
         return len(self.__condition_sets)
+
+    def get(self):
+        result = OrderedDict()
+        for name in self.__condition_sets:
+            result.update({name: self.__condition_sets[name].dict_conditions})
+        return result
 
     # Add/update a condition set
     # name: Name of condition set
@@ -65,7 +75,6 @@ class SeConditionSets(StateEngineTools.SeItemChild):
     def one_conditionset_matching(self):
         if self.count() == 0:
             self._log_debug("No condition sets defined -> matching")
-            self._abitem.lastconditionset_set('', '')
             return True
         for name in self.__condition_sets:
             if self.__condition_sets[name].all_conditions_matching():

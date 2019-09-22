@@ -20,7 +20,7 @@
 #########################################################################
 from . import StateEngineTools
 from . import StateEngineEval
-import datetime
+import re
 
 # Class representing a value for a condition (either value or via item/eval)
 class SeValue(StateEngineTools.SeItemChild):
@@ -53,7 +53,7 @@ class SeValue(StateEngineTools.SeItemChild):
             self.__cast_func = None
 
     def __repr__(self):
-        return "SeValue item {}, function {}, value {}.".format(self._abitem, self.__name, self.get())
+        return "{}".format(self.get())
 
     # Indicate of object is empty (neither value nor item nor eval set)
     def is_empty(self):
@@ -91,6 +91,8 @@ class SeValue(StateEngineTools.SeItemChild):
                 else:
                     value[i] = field_value[i]
                     field_value[i] = value[i]
+                if source[i] == "value":
+                    self.__listorder[i] = value[i]
                 if source[i] == "template":
                     if self.__template is None:
                         self.__template = []
@@ -149,10 +151,11 @@ class SeValue(StateEngineTools.SeItemChild):
             elif field_value == "":
                 field_value = source
                 source = "value"
+            if source == "value":
+                self.__listorder = [field_value]
         else:
             source = "value"
             field_value = value
-
         if isinstance(source, list):
             for i, s in enumerate(source):
                 if isinstance(field_value[i], list) and not self.__allow_value_list:
@@ -236,6 +239,11 @@ class SeValue(StateEngineTools.SeItemChild):
         else:
             return returnvalues
 
+    def get_for_webif(self):
+        returnvalues = self.get()
+        returnvalues = self.__varname if returnvalues == '' else returnvalues
+        return returnvalues
+
     def get_type(self):
         if self.__value is not None:
             return "value"
@@ -310,11 +318,11 @@ class SeValue(StateEngineTools.SeItemChild):
                 else:
                     try:
                         _newvalue = self.__cast_func(value)
-                    except Exception:
+                    except Exception as ex:
                         if any(x in value for x in ['sh.', '_eval', '(']):
                             raise ValueError("You most likely forgot to prefix your expression with 'eval:'")
                         else:
-                            raise ValueError("Not possible to cast")
+                            raise ValueError("Not possible to cast: {}".format(ex))
                     if value in self.__listorder:
                         self.__listorder[self.__listorder.index(value)] = _newvalue
                     value = _newvalue
@@ -334,21 +342,55 @@ class SeValue(StateEngineTools.SeItemChild):
                 return None
         return value
 
+    def __parse_relative(self, evalstr, begintag, endtags):
+        if evalstr.find(begintag+'.') == -1:
+            return evalstr
+        pref = ''
+        rest = evalstr
+        endtags = [endtags] if isinstance(endtags, str) else endtags
+
+        while (rest.find(begintag+'.') != -1):
+            pref += rest[:rest.find(begintag+'.')]
+            rest = rest[rest.find(begintag+'.')+len(begintag):]
+            endtag = ''
+            previousposition = 1000
+            for end in endtags:
+                position = rest.find(end)
+                if position < previousposition and not position == -1:
+                    endtag = end
+                    previousposition = position
+            rel = rest[:rest.find(endtag)]
+            rest = rest[rest.find(endtag)+len(endtag):]
+            if 'property' in endtag:
+                rest1 = re.split('( |\+|\-|\*|\/)', rest, 1)
+                rest = ''.join(rest1[1:])
+                pref += "se_eval.get_relative_itemproperty('{}', '{}')".format(rel, rest1[0])
+            elif '()' in endtag:
+                pref += "se_eval.get_relative_itemvalue('{}')".format(rel)
+        pref += rest
+        return pref
+
     # Determine value by executing eval-function
     def __get_eval(self):
         # noinspection PyUnusedLocal
         sh = self._sh
         if isinstance(self.__eval, str):
+            self.__eval = self.__parse_relative(self.__eval, 'sh.', ['()', '.property.'])
             if "stateengine_eval" in self.__eval or "se_eval" in self.__eval:
                 # noinspection PyUnusedLocal
-                stateengine_eval = se_eval = StateEngineEval.SeEval(self._abitem)
+                stateengine_eval = StateEngineEval.SeEval(self._abitem)
+                se_eval = StateEngineEval.SeEval(self._abitem)
+            self._log_debug("Checking eval: {0}.", self.__eval)
+            self._log_increase_indent()
             try:
                 _newvalue = eval(self.__eval)
                 if 'eval:{}'.format(self.__eval) in self.__listorder:
                     self.__listorder[self.__listorder.index('eval:{}'.format(self.__eval))] = _newvalue
                 values = _newvalue
+                self._log_decrease_indent()
             except Exception as ex:
                 self._log_info("Problem evaluating '{0}': {1}.", StateEngineTools.get_eval_name(self.__eval), ex)
+                self._log_decrease_indent()
                 return None
         else:
             if isinstance(self.__eval, list):
@@ -358,12 +400,13 @@ class SeValue(StateEngineTools.SeItemChild):
                         val = val.replace("\n", "")
                     except Exception:
                         pass
-                    self._log_info("Checking eval: {0}.", val)
+                    self._log_debug("Checking eval from list: {0}.", val)
                     self._log_increase_indent()
                     if isinstance(val, str):
                         if "stateengine_eval" in val or "se_eval" in val:
                             # noinspection PyUnusedLocal
-                            stateengine_eval = se_eval = StateEngineEval.SeEval(self._abitem)
+                            stateengine_eval = StateEngineEval.SeEval(self._abitem)
+                            se_eval = StateEngineEval.SeEval(self._abitem)
                         try:
                             _newvalue = eval(val)
                             if 'eval:{}'.format(val) in self.__listorder:
@@ -385,6 +428,7 @@ class SeValue(StateEngineTools.SeItemChild):
                         values.append(self.__do_cast(value))
                     self._log_decrease_indent()
             else:
+                self._log_debug("Checking eval: {0}.", val)
                 try:
                     self._log_increase_indent()
                     _newvalue = self.__eval()

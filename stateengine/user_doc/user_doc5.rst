@@ -58,11 +58,11 @@ Die folgenden Regeln kommen zur Anwendung:
 
 Der zu vergleichende Wert einer Bedingung kann auf folgende Arten definiert werden:
 
-- statischer Wert (also z.B. 500 Lux)
-- Item (beispielsweise ein Item namens settings.helligkeitsschwellwert)
-- Eval-Funktion (siehe auch `eval Ausdrücke <https://www.smarthomeng.de/user/konfiguration/items_attributes_eval_ausdruecke.html>`_)
+- statischer Wert (also z.B. 500 Lux). Wird angegegeben mit ``value:500``, wobei das value: auch weggelassen werden kann.
+- Item (beispielsweise ein Item namens settings.helligkeitsschwellwert). Wird angegeben mit ``item:settings.helligkeitsschwellwert``
+- Eval-Funktion (siehe auch `eval Ausdrücke <https://www.smarthomeng.de/user/konfiguration/items_attributes_eval_ausdruecke.html>`_). Wird angegeben mit ``eval:1*2*se_eval.get_relative_itemvalue('..bla')``
 - Template: eine Vorlage, z.B. eine eval Funktion, die immer wieder innerhalb
-des StateEngine Items eingesetzt werden kann.
+des StateEngine Items eingesetzt werden kann. Angegeben durch ``template:<Name des Templates>``
 
 
 .. rubric:: Name der Bedingung
@@ -71,7 +71,7 @@ des StateEngine Items eingesetzt werden kann.
 Der Name einer Bedingung setzt sich aus folgenden drei Teilen zusammen,
 die jeweils mit einem Unterstrich "_" getrennt werden:
 
-- ``se``: eindeutiger Prefix, um dem Plugin zugeordnet zu werden
+- ``se_``: eindeutiger Prefix, um dem Plugin zugeordnet zu werden
 - ``<Vergleichsfunktion>``: siehe unten. Beispiel: min = der Wert des <Bedingungsitems> muss mindestens dem beim Attribut angegebenen Wert entsprechen.
 - ``<Vergleichsitem/Bedingungsname>``: Hier wird entweder das im Regelwerk-Item mittels ``se_item_<Name>`` deklarierte Item oder eine besondere Bedingung (siehe unten) referenziert.
 
@@ -87,7 +87,7 @@ auf höchster Ebene des StateEngine Items (also z.B. rules) deklariert werden.
 
 .. code-block:: yaml
     rules:
-      se_template_test: eval:se_eval.get_relative_itemvalue('..settings.max_bright') - 20
+      se_template_test: eval:sh...settings.max_bright' - 20
       se_item_specialitem: meinitem.specialitem # declare an existing item here
 
       state_one:

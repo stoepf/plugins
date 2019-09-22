@@ -56,39 +56,6 @@ Vorgabewerte 0 für ``min`` und 255 für ``max``.
 Das zurückgelieferte Item kann nun genutzt werden, um in einem eval Ausdruck
 gesetzt oder abgefragt zu werden.
 
-**Item-Id relativ zum Regelwerk-Item ermitteln**
-*Eine Item-Id relativ zur Item-Id des Regelwerk-Items wird ermittelt.*
-
-.. code-block:: yaml
-
-   se_eval.get_relative_itemid(subitem_id)
-   se_eval.get_relative_itemid('..suspend')
-
-Statt dieser Funktion kann se_eval.get_relative_itemproperty('..suspend', 'path')
-verwendet werden.
-
-**Item-Wert relativ zum Regelwerk-Item ermitteln**
-*Der Wert eines Items relativ zur Item-Id des Regelwerk-Items wird ermittelt.*
-
-.. code-block:: yaml
-
-   se_eval.get_relative_itemvalue(subitem_id)
-   se_eval.get_relative_itemvalue('..suspend')
-
-Statt dieser Funktion kann se_eval.get_relative_itemproperty('..suspend', 'value')
-verwendet werden.
-
-**Item-Property relativ zum Regelwerk-Item ermitteln**
-*Eine Property eines Items relativ zur Item-Id des Regelwerk-Items wird ermittelt.*
-
-.. code-block:: yaml
-
-  se_eval.get_relative_itemproperty(subitem_id, property)
-  se_eval.get_relative_itemproperty('..suspend', 'last_change_age')
-
-Welche Werte für ``property`` genutzt werden können, ist hier nachzulesen:
-`Item Properties <https://www.smarthomeng.de/user/konfiguration/items_properties.html?highlight=property>`_).
-
 **Wert eines Item-Attributs ermitteln**
 *Der Wert eines Attributs wird ermittelt.*
 
@@ -123,6 +90,43 @@ Werts in diesem Item wird die bereits abgelaufene Suspend-Zeit
 bestimmt. Dies könnte auch über ein relatives Item angegeben werden,
 wobei dieses unbedingt in Anführungszeichen gesetzt werden muss, z.B. ``'..suspend'``
 
+**Item-Id relativ zum Regelwerk-Item ermitteln**
+*Eine Item-Id relativ zur Item-Id des Regelwerk-Items wird ermittelt.*
+
+.. code-block:: yaml
+
+   se_eval.get_relative_itemid(subitem_id)
+   se_eval.get_relative_itemid('..suspend')
+
+Statt dieser Funktion kann se_eval.get_relative_itemproperty('..suspend', 'path')
+verwendet werden. Alternativ ist es auch möglich, die aus SmarthomeNG bekannte Syntax
+``sh...suspend.property.path`` zu verwenden. Insofern hat diese Funktion nur wenig Relevanz.
+
+**Item-Wert relativ zum Regelwerk-Item ermitteln**
+*Der Wert eines Items relativ zur Item-Id des Regelwerk-Items wird ermittelt.*
+
+.. code-block:: yaml
+
+   se_eval.get_relative_itemvalue(subitem_id)
+   se_eval.get_relative_itemvalue('..suspend')
+
+Statt dieser Funktion kann se_eval.get_relative_itemproperty('..suspend', 'value')
+verwendet werden. Alternativ ist es auch möglich, die aus SmarthomeNG bekannte Syntax
+``sh...suspend.property.value`` oder ``sh...suspend()`` zu verwenden.
+Insofern hat diese Funktion nur wenig Relevanz.
+
+**Item-Property relativ zum Regelwerk-Item ermitteln**
+*Eine Property eines Items relativ zur Item-Id des Regelwerk-Items wird ermittelt.*
+
+.. code-block:: yaml
+
+  se_eval.get_relative_itemproperty(subitem_id, property)
+  se_eval.get_relative_itemproperty('..suspend', 'last_change_age')
+
+Welche Werte für ``property`` genutzt werden können, ist hier nachzulesen:
+`Item Properties <https://www.smarthomeng.de/user/konfiguration/items_properties.html?highlight=property>`_).
+Prinzipiell ist auch diese Funktion nicht zwingend zu verwenden, da sie ebenfalls
+durch bekannt Syntax ersetzt werden kann: ``sh...suspend.property.last_change_age``
 
 .. rubric:: Variablen
   :name: speziellevariablen
@@ -137,6 +141,60 @@ Im Plugin stehen folgende Variablen zur Verfügung:
 
 Beide obigen Variablen werden vom Suspendzustand genutzt, können bei
 Bedarf aber auch für andere Zwecke, welche auch immer, genutzt werden.
+
+**current.action_name:**
+*Der Name der Aktion, in der auf die Variable zugegriffen wird*
+
+Der Name der aktuellen Aktion, also der Teil hinter ``se_action_`` kann für
+das Setzen oder Eruieren von Werten herangezogen werden. Dies macht insbesondere
+dann Sinn, wenn auf Setting-Items in der Aktion Bezug genommen wird. Durch
+diese Variable ist es so je nach Setup möglich, ein Template für sämtliche
+Aktionen zu nutzen. Hier ein Beispiel. Das Template "setvalue" wird für das
+Setzen mehrerer Items herangezogen. Der eval Ausdruck schafft eine Referenz
+auf das passende Unteritem in licht1.automatik.settings.
+
+.. code-block:: yaml
+
+    #items/item.yaml
+    licht1:
+        irgendeinitem:
+            type: bool
+
+        dimmen:
+            warm:
+                sollwert:
+                    type: num
+            kalt:
+                sollwert:
+                    type: num
+
+        automatik:
+            settings:
+                sollwert_warm:
+                    type: num
+                sollwert_kalt:
+                    type: num
+                wasauchimmer:
+                    type: bool
+
+            rules:
+                se_item_sollwert_warm: licht1.dimmen.warm.sollwert
+                se_item_sollwert_kalt: licht1.dimmen.kalt.sollwert
+                se_item_wasauchimmer: licht1.irgendeinitem
+                se_template_setvalue: "eval:sh.return_item(se_eval.get_relative_itemid('..settings.{}'.format(
+                                       se_eval.get_variable('current.action_name'))))()"
+                zustand1:
+                   name: 'Ein Zustand'
+                   on_enter_or_stay:
+                       se_action_sollwert_warm:
+                         - 'function: set'
+                         - "to: template:setvalue"
+                       se_action_sollwert_kalt:
+                         - 'function: set'
+                         - "to: template:setvalue"
+                       se_action_wasauchimmer:
+                         - 'function: set'
+                         - "to: template:setvalue"
 
 **current.state_id:**
 *Die Id des Status, der gerade geprüft wird*
