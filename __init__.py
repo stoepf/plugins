@@ -3,5 +3,5 @@ def plugin_release():
 
 
 def plugin_branch():
-    return 'develop'
+    return 'master'
 
