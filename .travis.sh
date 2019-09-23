@@ -27,7 +27,7 @@ echo "travis_fold:end:Environment"
 # Declare some common variables
 
 REPOSITORIES="smarthome plugins"
-LINKS="smarthome/plugins/plugins"
+LINKS="stoepf/plugins/plugins"
 
 # Get the current repository which is processed
 REPOSITORY="$(basename $TRAVIS_REPO_SLUG)"
@@ -53,7 +53,7 @@ cd $TRAVIS_BUILD_DIR/..
 for REPO in $REPOSITORIES ; do
   if [ "$REPO" != "$REPOSITORY_ORIGIN" ] ; then
     echo "Checking out $REPO ..."
-    git clone https://github.com/smarthomeNG/$REPO.git $REPO
+    git clone https://github.com/stoepf/$REPO.git $REPO
     cd $REPO
     git checkout $REPOSITORY_BRANCH
     cd ..
