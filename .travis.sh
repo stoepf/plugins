@@ -67,7 +67,7 @@ echo "travis_fold:end:Checkout"
 # 2. Create symlinks in repositories
 
 echo -e "travis_fold:start:Links\nCreating symlinks"
-
+cd ..
 # Create symlinks in core repository
 for LINK in $LINKS ; do
   TARGET=$(dirname "$LINK")
